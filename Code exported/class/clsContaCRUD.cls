@@ -1,0 +1,179 @@
+VERSION 1.0 CLASS
+BEGIN
+  MultiUse = -1  'True
+END
+Attribute VB_Name = "clsContaCRUD"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = False
+Attribute VB_PredeclaredId = False
+Attribute VB_Exposed = False
+Option Compare Database
+Option Explicit
+'================================
+'VARIÁVEIS
+'================================
+Private conexao As New ADODB.connection
+Private comando As New ADODB.Command
+Private conta As clsConta
+Private rs As ADODB.Recordset
+Private strSQL As String
+'================================
+'MÉTODOS
+'================================
+'ABRE FORM PRA NOVO REGISTRO DE CONTA
+Public Sub NovaConta(conta As clsConta)
+    On Error GoTo TrataErro
+    
+    Static frm As Form 'declara
+    Set frm = New Form_frm_crudConta 'instancia
+    Call frm.Argumento(conta)
+    frm.Visible = True 'torna visível
+    Exit Sub
+    
+TrataErro:
+    If Err.Number <> 0 Then Call modExceptions.TrataErro(Err)
+    End
+End Sub
+'ABRE FORM PARA EDITAR O REGISTRO DE CONTA
+Public Sub Editar()
+    Set rs = New ADODB.Recordset
+    'busca os registros no BD que está com checkbox TRUE
+    strSQL = "SELECT * FROM tbl_Contas WHERE SELECAO = -1"
+    
+    On Error GoTo TrataErro
+    'Abre conexao | Criar comando | executa comando
+    Set conexao = modUtils.AbrirConexao
+    Set comando = modUtils.CriarComando(conexao, strSQL)
+    Set rs = modUtils.GetReader(comando)
+    'se não encontrar registos para o ID, morre aqui
+    If rs.RecordCount = 0 Then
+        MsgBox ("Selecione um registro para editar")
+        Exit Sub
+    End If
+    'Seta os registros do BD nas propriedades da classe
+    Set conta = New clsConta
+    With conta
+        .SetIdEstrangeira = rs(0)
+        .SetId = rs(1)
+        .SetSelecao = rs(2)
+        .SetDtChegada = rs(3)
+        .SetMesRef = rs(4)
+        .SetValorConta = rs(5)
+        .SetDtVencimento = rs(6)
+        .SetStatus = rs(7)
+        .SetObsConta = rs(8)
+        .SetLinkConta = rs(9)
+    End With
+    
+    'Criar nova instancia de form para edição
+    Static frm As Form
+    Set frm = New Form_frm_crudConta 'instancia
+    Call frm.Argumento(conta) 'chama a função interna do form e passa o Objeto funcionario
+    frm.Visible = True 'funcionario visível
+    Exit Sub
+    
+    rs.Close: Set rs = Nothing 'Esvazia memória
+    modUtils.FecharConexao 'Fecha conexao
+    Exit Sub
+    
+TrataErro:
+    If Err.Number <> 0 Then Call modExceptions.TrataErro(Err)
+    End
+End Sub
+'SALVA  OU ATUALIZA REGISTRO DE DESCRIÇÃO DE CONTA
+Public Sub Salvar(conta As clsConta)
+    On Error GoTo TrataErro
+    If Not IsNull(conta.GetId) Then
+        strSQL = "UPDATE tbl_Contas SET ID_ESTRANGEIRA = ?, SELECAO = ?, DTA_CHEGADA = ?, " & _
+                      "MES_REFERENCIA = ?, VALOR_CONTA = ?, DTA_VENCIMENTO = ?, " & _
+                      "STATUS = ?, OBS_CONTA = ?, LINK_CONTA = ? WHERE ID = ?;"
+    Else
+        strSQL = "INSERT INTO tbl_Contas(ID_ESTRANGEIRA, SELECAO, DTA_CHEGADA, " & _
+                 "MES_REFERENCIA, VALOR_CONTA, DTA_VENCIMENTO, STATUS, OBS_CONTA, LINK_CONTA)" & _
+                 "VALUES(?,?,?,?,?,?,?,?,?);"
+    End If
+    
+    Set conexao = modUtils.AbrirConexao
+    Set comando = modUtils.CriarComando(conexao, strSQL)
+    With comando
+        .Parameters.Append .CreateParameter("@aIdEst", adInteger, adParamInput, 10, conta.IdEstrangeira)
+        .Parameters.Append .CreateParameter("@aSelecao", adBoolean, adParamInput, 1, conta.Selecao)
+        .Parameters.Append .CreateParameter("@aDtCheg", adDate, adParamInput, 10, conta.DtChegada)
+        .Parameters.Append .CreateParameter("@aMesRef", adVarChar, adParamInput, 10, conta.MesRef)
+        .Parameters.Append .CreateParameter("@aValor", adCurrency, adParamInput, 10, conta.ValorConta)
+        .Parameters.Append .CreateParameter("@aDtVenc", adDate, adParamInput, 10, conta.DtVencimento)
+        .Parameters.Append .CreateParameter("@aObsConta", adVarChar, adParamInput, 10, conta.Status)
+        .Parameters.Append .CreateParameter("@aObsConta", adLongVarChar, adParamInput, 255, conta.ObsConta)
+        .Parameters.Append .CreateParameter("@aLink", adVarChar, adParamInput, 100, conta.LinkConta)
+        .Parameters.Append .CreateParameter("@aId", adInteger, adParamInput, 10, conta.GetId)
+        .Execute
+    End With
+    modUtils.FecharConexao
+    MsgBox "Registro Salvo"
+    
+    Call CriarDiretorio(conta)
+    Call modUtils.CarregaSubForm(4, "frm_Conta")
+    Exit Sub
+    
+TrataErro:
+    If Err.Number <> 0 Then Call modExceptions.TrataErro(Err)
+    End
+End Sub
+'================================
+'FUNÇÕES
+'================================
+'OBTER REGISTROS DE DESCRIÇÃO DE CONTA
+Public Function ObterConta(Optional filtro As String) As ADODB.Recordset
+    On Error GoTo TrataErro
+    strSQL = "SELECT * FROM tbl_Contas WHERE ID_ESTRANGEIRA=" & Forms!frm_PrestadorSv.txtId & filtro & " ORDER BY DTA_CHEGADA DESC"
+    
+    Set rs = New ADODB.Recordset
+    Set conexao = modUtils.AbrirConexao 'Abre conexao
+    rs.Open strSQL, conexao, adOpenStatic, adLockOptimistic
+    Set ObterConta = rs 'Return
+    Exit Function
+    
+TrataErro:
+    If Err.Number <> 0 Then Call modExceptions.TrataErro(Err)
+    End
+End Function
+'CRIAR DIRETÓRIO
+Private Sub CriarDiretorio(conta As clsConta)
+    Dim strDestino As String
+    Dim strSplit As Variant
+    Dim strPastas As Variant
+    Dim i As Integer
+    
+    On Error GoTo TrataErro
+    'Consulta que seleciona a empresa e o funcionário
+    strSQL = "SELECT tbl_PrestadorDeSv.descricao, tbl_contas.mes_referencia " & _
+                  "FROM tbl_contas INNER JOIN tbl_PrestadorDeSv ON tbl_PrestadorDeSv.id = tbl_contas.id_estrangeira " & _
+                  "WHERE tbl_contas.id_estrangeira =" & conta.IdEstrangeira
+    
+    Set rs = New ADODB.Recordset 'Instancia recordSet
+    Set conexao = modUtils.AbrirConexao '
+    Set comando = modUtils.CriarComando(conexao, strSQL)
+    Set rs = modUtils.GetReader(comando)
+    
+    strPastas = rs(0) & "|" & "Ref " & Format(conta.MesRef, "00-00")
+    'strDestino = "C:\Users\Vostro 5480\Desktop\"
+    'strDestino = "C:\ARQUIVO\Contas\" 'SUGESTÃO DLOOKUP DENTRO DE TBL. USUÁRIO ESCOLHE LOCAL
+    strDestino = CurrentProject.Path & "\SYSCOLAB\ARQUIVO\Contas\"
+    
+    'verifica se existe a pasta, caso sim, sobrescreve-a
+    On Error Resume Next
+    strSplit = Split(strPastas, "|") 'Pega os valores divididos por |
+    i = 0
+    Do While i <= UBound(strSplit) 'Enquanto for menor que tamanho do Split
+        strDestino = strDestino & strSplit(i) & "\"
+        If Len(Dir(strDestino, vbDirectory) & "") = 0 Then FileSystem.MkDir (strDestino) 'Cria diretório
+        i = i + 1
+    Loop
+    rs.Close: Set rs = Nothing 'Esvazia momória
+    modUtils.FecharConexao 'Fecha conexao
+    Exit Sub
+    
+TrataErro:
+    If Err.Number <> 0 Then Call modExceptions.TrataErro(Err)
+    End
+End Sub
