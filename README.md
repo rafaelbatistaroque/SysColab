@@ -8,6 +8,7 @@ Mostra todos os funciuonários cadastrados.
 
 ### Tela de funcionário :+1:
 Mostra todos os dados do funcionários cadastrado (Salário, Contas Bancárias, etc.).
+
 **Salário**
 
 ![telaFuncionario](https://github.com/rafaelbatistaroque/SysColab/blob/master/SYSCOLAB/img/Slide2.PNG)
